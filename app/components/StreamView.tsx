@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast, ToastContainer } from "react-toastify"
@@ -44,6 +44,7 @@ export default function StreamView({
   playVideo: boolean,
 }) {
   const [inputLink, setInputLink] = useState("");
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [videoId, setVideoId] = useState("");
   const [isCreator, setIsCreator] = useState(false);
   const [currentlyPlaying, setCurrentlyPlaying] = useState<Video | null>(null);
@@ -54,7 +55,7 @@ export default function StreamView({
   const playerRef = useRef<ReturnType<typeof YouTubePlayer> | null>(null);
 
 
-  async function refreshStreams() {
+  const refreshStreams = useCallback(async () => {
     try {
       const res = await fetch(`/api/streams/?creatorId=${creatorId}`, {
         credentials: "include"
@@ -79,7 +80,7 @@ export default function StreamView({
       setQueue([]);
       setCurrentlyPlaying(null);
     }
-  }
+  }, [creatorId])
 
   useEffect(() => {
     refreshStreams();
@@ -88,9 +89,25 @@ export default function StreamView({
     }, REFRESH_INTERVAL_MS)
 
     return () => clearInterval(interval);
-  }, [creatorId])
+  }, [creatorId, refreshStreams])
 
-
+  const playNext = useCallback(async () => {
+    if (queue.length > 0) {
+      try {
+        setPlayNextLoader(true);
+        const data = await fetch('/api/streams/next', {
+          method: "GET",
+        })
+        const json = await data.json();
+        setCurrentlyPlaying(json.stream);
+        setQueue(q => q.filter((x) => x.id !== json.stream?.id))
+      } catch (e) {
+        console.error("Error playing next song:", e);
+      } finally {
+        setPlayNextLoader(false);
+      }
+    }
+  }, [queue])
 
   useEffect(() => {
     if (!videoPlayerRef.current) return;
@@ -118,7 +135,7 @@ export default function StreamView({
       }
     };
     // Only depend on currentlyPlaying
-  }, [currentlyPlaying]);
+  }, [currentlyPlaying, playNext]);
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,23 +193,7 @@ export default function StreamView({
     })
   }
 
-  const playNext = async () => {
-    if (queue.length > 0) {
-      try {
-        setPlayNextLoader(true);
-        const data = await fetch('/api/streams/next', {
-          method: "GET",
-        })
-        const json = await data.json();
-        setCurrentlyPlaying(json.stream);
-        setQueue(q => q.filter((x) => x.id !== json.stream?.id))
-      } catch (e) {
-        console.error("Error playing next song:", e);
-      } finally {
-        setPlayNextLoader(false);
-      }
-    }
-  }
+
 
   const handleShare = () => {
     const shareableLink = `${window.location.origin}/creator/${creatorId}`;

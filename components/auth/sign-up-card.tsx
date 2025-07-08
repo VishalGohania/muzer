@@ -5,7 +5,6 @@ import { FcGoogle } from "react-icons/fc";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";

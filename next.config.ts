@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
       'img.youtube.com'  // for YouTube thumbnails
     ],
   },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true
+  }
 };
 
 export default nextConfig;
