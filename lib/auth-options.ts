@@ -106,18 +106,39 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt"
   },
   callbacks: {
-    async jwt({ token, account, profile }) {
-      if(account && profile) {
-        token.email = profile.email as string;
-        token.id = account.access_token;
+    async jwt({ token, account, profile, user }) {
+      if(account && user) {
+        token.email = user.email as string;
+        token.id = user.id;
       }
+
+      if (account?.provider === "google" && profile) {
+        try {
+          const dbUser = await db.user.findUnique({
+            where: { email: profile.email }
+          });
+          if (dbUser) {
+            token.id = dbUser.id;
+            token.email = dbUser.email;
+          }
+        } catch (error) {
+          console.error("Error fetching user in JWT callback:", error);
+        }
+      }
+
       return token;
     },
+
     async session({ session, token } : {
       session: Session,
       token: JWT;
     }) {
       try { 
+        if (token.id) {
+          session.user.id = token.id as string;
+          return session;
+        }
+
         const user = await db.user.findUnique({
           where: {
             email: token.email
@@ -136,6 +157,7 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
+
     async signIn({ account, profile}) {
       try {
         if(account?.provider === "google") {
@@ -150,7 +172,7 @@ export const authOptions: NextAuthOptions = {
           if(!user) {
             await db.user.create({
               data: {
-                email: profile.email!,
+                email: profile.email,
                 name: profile.name || undefined,
                 provider: "Google"
               }
@@ -159,7 +181,7 @@ export const authOptions: NextAuthOptions = {
         }
         return true;
       } catch (error) {
-        console.log(error);
+        console.log("Error in signIn callback",error);
         return false;
       }
     }
