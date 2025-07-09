@@ -89,7 +89,31 @@ export default function StreamView({
     }, REFRESH_INTERVAL_MS)
 
     return () => clearInterval(interval);
-  }, [creatorId, refreshStreams])
+  }, [creatorId, refreshStreams]);
+
+  const playNow = async (streamId: string) => {
+    try {
+      setPlayNextLoader(true);
+
+      // Mark the specific song as played and set as current
+      await fetch('/api/streams/play-now', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ streamId })
+      });
+
+      // Refresh to get updated queue
+      await refreshStreams();
+    } catch (error) {
+      console.error('Error playing song now:', error);
+      toast.error('Failed to play song');
+    } finally {
+      setPlayNextLoader(false);
+    }
+  };
 
   const playNext = useCallback(async () => {
     if (queue.length > 0) {
@@ -148,13 +172,26 @@ export default function StreamView({
         });
 
         // set up event listner
-        playerRef.current.on('stateChange', (event) => {
+        playerRef.current.on('stateChange', async (event) => {
           if (event.data === 0) {
+
+            if (currentlyPlaying) {
+              // Mark current video as played
+              await markAsPlayed(currentlyPlaying.id);
+
+              // Remove from current stream
+              await fetch('/api/streams/remove-current', {
+                method: 'POST',
+                credentials: 'include'
+              });
+            }
+
             setTimeout(() => {
               playNextRef.current();
             }, 1000)
           }
-        })
+        });
+
         if (currentlyPlaying) {
           await playerRef.current.loadVideoById(currentlyPlaying.extractedId);
           await playerRef.current.playVideo();
@@ -213,10 +250,25 @@ export default function StreamView({
     }
   }
 
-
-  const handleVote = async (id: string, isUpvote: boolean) => {
+  const markAsPlayed = async (streamId: string) => {
     try {
-      const res = await fetch(`/api/streams/${isUpvote ? "upvote" : "downvote"}`, {
+      await fetch('/api/streams/mark-played', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ streamId })
+      });
+    } catch (error) {
+      console.error('Error marking stream as played:', error);
+    }
+  };
+
+
+  const handleVote = async (id: string) => {
+    try {
+      const res = await fetch(`/api/streams/upvote`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -233,15 +285,17 @@ export default function StreamView({
       }
 
       setQueue(prevQueue =>
-        prevQueue.map(video =>
-          video.id === id
-            ? {
+        prevQueue.map(video => {
+          if (video.id === id) {
+            const newHaveUpvoted = !video.haveUpvoted;
+            return {
               ...video,
-              upvotes: isUpvote ? video.upvotes + 1 : video.upvotes - 1,
-              haveUpvoted: !video.haveUpvoted
-            }
-            : video
-        ).sort((a, b) => b.upvotes - a.upvotes));
+              upvotes: newHaveUpvoted ? video.upvotes + 1 : video.upvotes - 1,
+              haveUpvoted: newHaveUpvoted
+            };
+          }
+          return video;
+        }).sort((a, b) => b.upvotes - a.upvotes));
 
     } catch (error) {
       console.error("Error voting:", error);
@@ -310,13 +364,23 @@ export default function StreamView({
                       <div className="flex-grow">
                         <h3 className="font-semibold text-white">{video.title}</h3>
                         <div className="flex items-center space-x-2 mt-2">
+                          {isCreator && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => playNow(video.id)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white hover:cursor-pointer"
+                            >
+                              Play Now
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleVote(video.id, video.haveUpvoted ? false : true)}
+                            onClick={() => handleVote(video.id, true)}
                             className="flex items-center space-x-1 bg-gray-800 text-white border-gray-700 hover:bg-gray-700"
                           >
-                            {video.haveUpvoted ? <ChevronUp className="h-4 w-4 mr-1" /> : <ChevronUp className="h-4 w-4 mr-1" />}
+                            <ChevronUp className={`h-4 w-4 mr-1 ${video.haveUpvoted ? 'text-white' : 'text-gray-400'}`} />
                             <span className="text-white">{video.upvotes}</span>
                           </Button>
                           {isCreator && (

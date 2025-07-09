@@ -36,14 +36,25 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    if(!existing) {
+    if(existing) {
+      // If upvote exists, remove it (toggle off)
+      await db.upvote.delete({
+        where: {
+          userId_streamId: {
+            userId: user.id,
+            streamId: data.streamId
+          } 
+        }
+      })
+    } else {
+      // If upvote doesn't exist, create it (toggle on)
       await db.upvote.create({
         data: {
           userId: user.id,
           streamId: data.streamId
         }
       })
-  }
+    }
     return NextResponse.json({
       message: "Done!"
     })

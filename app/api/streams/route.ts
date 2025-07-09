@@ -262,10 +262,10 @@ export async function GET(req: NextRequest) {
   const isCreator = user.id === creatorId
 
   return NextResponse.json({
-    streams: streams.map(({_count, ...rest}) => ({
+    streams: streams.map(({_count, upvotes, ...rest}) => ({
       ...rest,
       upvotes: _count.upvotes,
-      hasUpvoted: rest.upvotes.length ? true: false
+      hasUpvoted: upvotes.length > 0
     })),
     activeStream,
     isCreator
