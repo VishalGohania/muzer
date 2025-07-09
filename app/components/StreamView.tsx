@@ -62,7 +62,7 @@ export default function StreamView({
       });
       const json = await res.json();
       if (json.streams && Array.isArray(json.streams)) {
-        setQueue(json.streams.length > 0 ? json.streams.sort((a: Video, b: Video) => a.upvotes < b.upvotes ? 1 : -1) : []);
+        setQueue(json.streams.length > 0 ? json.streams.sort((a: Video, b: Video) => b.upvotes - a.upvotes) : []);
       } else {
         setQueue([]);
       }
@@ -97,36 +97,74 @@ export default function StreamView({
         setPlayNextLoader(true);
         const data = await fetch('/api/streams/next', {
           method: "GET",
-        })
+          credentials: 'include'
+        });
+
+        if (!data.ok) {
+          throw new Error('Failed to fetch next stream');
+        }
+
         const json = await data.json();
-        setCurrentlyPlaying(json.stream);
-        setQueue(q => q.filter((x) => x.id !== json.stream?.id))
+
+        if (json.stream) {
+          setCurrentlyPlaying(json.stream);
+          setQueue(q => q.filter((x) => x.id !== json.stream?.id));
+        }
       } catch (e) {
         console.error("Error playing next song:", e);
+        toast.error('Failed to play next song');
       } finally {
         setPlayNextLoader(false);
       }
     }
-  }, [queue])
+  }, [queue.length]);
+
+  const playNextRef = useRef(playNext);
+  playNextRef.current = playNext;
 
   useEffect(() => {
-    if (!videoPlayerRef.current) return;
+    const playerElement = videoPlayerRef.current;
 
-    if (!playerRef.current) {
-      playerRef.current = YouTubePlayer(videoPlayerRef.current, {
-        playerVars: { origin: window.location.origin }
-      });
-      playerRef.current.on('stateChange', (event: { data: number }) => {
-        if (event.data === 0) {
-          playNext();
+    if (!playerElement || !playVideo) return;
+
+    const initializePlayer = async () => {
+      try {
+        // clean up existing player
+        if (playerRef.current) {
+          await playerRef.current.destroy();
+          playerRef.current = null;
         }
-      });
-    }
 
-    if (currentlyPlaying) {
-      playerRef.current.loadVideoById(currentlyPlaying.extractedId);
-      playerRef.current.playVideo();
+        // Create new player
+        playerRef.current = YouTubePlayer(playerElement, {
+          playerVars: {
+            origin: window.location.origin,
+            autoplay: 1,
+            controls: 1,
+            modestbranding: 1,
+            rel: 0,
+            enablejsapi: 1
+          }
+        });
+
+        // set up event listner
+        playerRef.current.on('stateChange', (event) => {
+          if (event.data === 0) {
+            setTimeout(() => {
+              playNextRef.current();
+            }, 1000)
+          }
+        })
+        if (currentlyPlaying) {
+          await playerRef.current.loadVideoById(currentlyPlaying.extractedId);
+          await playerRef.current.playVideo();
+        }
+
+      } catch (error) {
+        console.error("Error initializing Youtube player:", error);
+      }
     }
+    initializePlayer();
     // Only clean up on unmount
     return () => {
       if (playerRef.current) {
@@ -135,7 +173,7 @@ export default function StreamView({
       }
     };
     // Only depend on currentlyPlaying
-  }, [currentlyPlaying, playNext]);
+  }, [currentlyPlaying, playVideo]);
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -148,49 +186,67 @@ export default function StreamView({
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: 'include',
         body: JSON.stringify({
           creatorId,
-          url: inputLink,
+          url: inputLink.trim(),
         })
       });
 
-      const data = await res.json();
       if (!res.ok) {
+        const data = await res.json();
         throw new Error(data.message || 'Failed to add song');
       }
 
-      setQueue([...queue, data]);
+      const data = await res.json();
+
+      // update the queue with new song
+      setQueue(prevQueue => [...prevQueue, data].sort((a, b) => b.upvotes - a.upvotes));
       setInputLink("");
-      console.log("Song added to queue successfully")
+      toast.success("Song added to queue successfully!");
+
     } catch (error) {
-      if (error instanceof Error) {
-        console.error(error);
-      } else {
-        console.error("An unexpected error occurred")
-      }
+      console.error("Error adding song:", error);
+      toast.error("Failed to add song");
     } finally {
       setLoading(false);
     }
   }
 
 
-  const handleVote = (id: string, isUpvote: boolean) => {
-    setQueue(queue.map(video =>
-      video.id === id
-        ? {
-          ...video,
-          upvotes: isUpvote ? video.upvotes + 1 : video.upvotes - 1,
-          haveUpvoted: !video.haveUpvoted
-        }
-        : video
-    ).sort((a, b) => (b.upvotes) - (a.upvotes)))
+  const handleVote = async (id: string, isUpvote: boolean) => {
+    try {
+      const res = await fetch(`/api/streams/${isUpvote ? "upvote" : "downvote"}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          streamId: id
+        })
+      });
 
-    fetch(`/api/streams/${isUpvote ? "upvote" : "downvote"}`, {
-      method: "POST",
-      body: JSON.stringify({
-        streamId: id
-      })
-    })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: 'Failed to vote' }));
+        throw new Error(errorData.message || 'Failed to vote');
+      }
+
+      setQueue(prevQueue =>
+        prevQueue.map(video =>
+          video.id === id
+            ? {
+              ...video,
+              upvotes: isUpvote ? video.upvotes + 1 : video.upvotes - 1,
+              haveUpvoted: !video.haveUpvoted
+            }
+            : video
+        ).sort((a, b) => b.upvotes - a.upvotes));
+
+    } catch (error) {
+      console.error("Error voting:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to vote");
+    }
   }
 
 
@@ -206,17 +262,19 @@ export default function StreamView({
 
   const removeSong = async (streamId: string) => {
     try {
-      const res = await fetch(`api/streams/remove?streamId=${streamId}`, {
+      const res = await fetch(`/api/streams/remove?streamId=${streamId}`, {
         method: "DELETE",
+        credentials: "include"
       });
-      if (res.ok) {
-        toast.success("Song removed successfully");
-        refreshStreams();
-      } else {
-        toast.error("Failed to removed song");
+      if (!res.ok) {
+        throw new Error('Failed to remove song');
       }
-    } catch {
-      toast.error("An error occurred by romoving the song");
+
+      toast.success("Song removed successfully");
+      await refreshStreams();
+    } catch (error) {
+      console.error("Error removing song:", error);
+      toast.error("Failed to remove song");
     }
   }
 

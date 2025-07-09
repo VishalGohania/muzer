@@ -25,15 +25,26 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const data = UpvoteSchema.parse(await req.json())
-    await db.upvote.delete({
+    const data = UpvoteSchema.parse(await req.json());
+    const existingUpvote = await db.upvote.findUnique({
       where: {
         userId_streamId: {
           userId: user.id,
           streamId: data.streamId
-        }      
+        }
       }
-    })
+    });
+
+    if(existingUpvote) {
+      await db.upvote.delete({
+        where: {
+          userId_streamId: {
+            userId: user.id,
+            streamId: data.streamId
+          }      
+        }
+      })
+  }
     return NextResponse.json({
       message: "Done!"
     })

@@ -91,6 +91,17 @@ export const authOptions: NextAuthOptions = {
     signIn: "/auth"
   },
   secret: process.env.NEXTAUTH_SECRET ?? "secret",
+  cookies: {
+    sessionToken: {
+      name: `${process.env.NODE_ENV === 'production' ? '__Secure-' : ''}next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   session: {
     strategy: "jwt"
   },

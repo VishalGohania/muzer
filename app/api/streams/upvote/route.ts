@@ -26,16 +26,29 @@ export async function POST(req: NextRequest) {
 
   try {
     const data = UpvoteSchema.parse(await req.json());
-    await db.upvote.create({
-      data: {
-        userId: user.id,
-        streamId: data.streamId
+
+    const existing = await db.upvote.findUnique({
+      where: {
+        userId_streamId: {
+          userId: user.id,
+          streamId: data.streamId
+        }
       }
     });
+
+    if(!existing) {
+      await db.upvote.create({
+        data: {
+          userId: user.id,
+          streamId: data.streamId
+        }
+      })
+  }
     return NextResponse.json({
       message: "Done!"
     })
   } catch (e) {
+    console.error(e);
     return NextResponse.json({
       message: "Error while upvoting"
     }, {
