@@ -366,10 +366,9 @@ export default function StreamView({
                         <div className="flex items-center space-x-2 mt-2">
                           {isCreator && (
                             <Button
-                              variant="outline"
                               size="sm"
                               onClick={() => playNow(video.id)}
-                              className="bg-purple-600 hover:bg-purple-700 text-white hover:cursor-pointer"
+                              className="bg-purple-700 hover:bg-purple-800 text-white transition-colors"
                             >
                               Play Now
                             </Button>
